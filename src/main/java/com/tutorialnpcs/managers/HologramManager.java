@@ -67,32 +67,50 @@ public class HologramManager {
             existing.setText(text);
             existing.teleport(holoLoc);
         } else {
-            TextDisplay td = (TextDisplay) holoLoc.getWorld().spawnEntity(holoLoc, org.bukkit.entity.EntityType.TEXT_DISPLAY);
-            td.setText(text);
-            td.setBillboard(Display.Billboard.CENTER);
-            td.setSeeThrough(true);
-            td.setDefaultBackground(false);
-            td.setAlignment(TextDisplay.TextAlignment.CENTER);
-            td.setShadowed(true);
-            Transformation t = td.getTransformation();
-            td.setTransformation(new Transformation(
-                    t.getTranslation(),
-                    new AxisAngle4f(0, 0, 0, 1),
-                    new Vector3f(1.4f, 1.4f, 1.4f),
-                    new AxisAngle4f(0, 0, 0, 1)
-            ));
+            // Remove stale entry if dead
+            if (existing != null) existing.remove();
+
+            TextDisplay td = holoLoc.getWorld().spawn(holoLoc, TextDisplay.class, display -> {
+                display.setText(text);
+                display.setBillboard(Display.Billboard.CENTER);
+                display.setSeeThrough(true);
+                display.setDefaultBackground(false);
+                display.setAlignment(TextDisplay.TextAlignment.CENTER);
+                display.setShadowed(true);
+                display.setTransformation(new Transformation(
+                        new Vector3f(0, 0, 0),
+                        new AxisAngle4f(0, 0, 0, 1),
+                        new Vector3f(1.4f, 1.4f, 1.4f),
+                        new AxisAngle4f(0, 0, 0, 1)
+                ));
+                // Hide from everyone initially
+                display.setVisibleByDefault(false);
+            });
+
+            // Show only to this specific player
+            player.showEntity(plugin, td);
             playerHolograms.put(uuid, td);
         }
     }
 
     public void removeForPlayer(Player player) {
         TextDisplay td = playerHolograms.remove(player.getUniqueId());
-        if (td != null && !td.isDead()) td.remove();
+        if (td != null && !td.isDead()) {
+            player.hideEntity(plugin, td);
+            td.remove();
+        }
     }
 
     public void removeAllHolograms() {
         if (refreshTask != null) refreshTask.cancel();
-        for (TextDisplay td : playerHolograms.values()) if (td != null && !td.isDead()) td.remove();
+        for (Map.Entry<UUID, TextDisplay> entry : playerHolograms.entrySet()) {
+            Player p = Bukkit.getPlayer(entry.getKey());
+            TextDisplay td = entry.getValue();
+            if (td != null && !td.isDead()) {
+                if (p != null) p.hideEntity(plugin, td);
+                td.remove();
+            }
+        }
         playerHolograms.clear();
     }
 }
