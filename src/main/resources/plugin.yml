@@ -1,0 +1,24 @@
+name: TutorialNPCs
+version: 1.0.0
+main: com.tutorialnpcs.TutorialNPCsPlugin
+api-version: "1.21"
+depend: [Citizens]
+description: A configurable tutorial NPC plugin with waypoints and ordered progression
+author: YourName
+
+commands:
+  tnpc:
+    description: Main TutorialNPCs command
+    usage: /tnpc <subcommand>
+    permission: tutorialnpcs.admin
+
+permissions:
+  tutorialnpcs.admin:
+    description: Access to all TutorialNPCs admin commands
+    default: op
+  tutorialnpcs.bypass:
+    description: Bypass NPC order (talk to any NPC)
+    default: op
+  tutorialnpcs.reset:
+    description: Reset any player's progress
+    default: op
