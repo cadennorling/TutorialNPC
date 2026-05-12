@@ -17,6 +17,7 @@ public class PlayerQuitListener implements Listener {
     public void onQuit(PlayerQuitEvent event) {
         plugin.getPlayerProgressManager().endDialogue(event.getPlayer());
         plugin.getHologramManager().removeForPlayer(event.getPlayer());
-        plugin.getPlayerProgressManager().saveAll();
+        // Only save THIS player, not everyone
+        plugin.getPlayerProgressManager().saveOne(event.getPlayer());
     }
 }
