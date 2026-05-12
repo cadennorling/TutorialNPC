@@ -61,6 +61,10 @@ public class PlayerProgressManager {
         catch (IOException e) { plugin.getLogger().log(Level.SEVERE, "Could not save playerdata.yml", e); }
     }
 
+    public void saveOne(org.bukkit.entity.Player player) {
+        savePlayer(player.getUniqueId());
+    }
+
     private void savePlayer(UUID uuid) {
         dataConfig.set("players." + uuid + ".nextNpcIndex", nextNpcIndex.getOrDefault(uuid, 0));
         dataConfig.set("players." + uuid + ".completedNpcs", new ArrayList<>(completedNpcs.getOrDefault(uuid, new HashSet<>())));
