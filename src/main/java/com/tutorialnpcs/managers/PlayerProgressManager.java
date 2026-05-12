@@ -6,9 +6,7 @@ import org.bukkit.entity.Player;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.logging.Level;
 
 public class PlayerProgressManager {
@@ -20,6 +18,7 @@ public class PlayerProgressManager {
     private final Map<UUID, Integer> nextNpcIndex = new HashMap<>();
     private final Map<UUID, Integer> dialogueLine = new HashMap<>();
     private final Map<UUID, Integer> activeTutorialNpcId = new HashMap<>();
+    private final Map<UUID, Set<Integer>> completedNpcs = new HashMap<>();
 
     public PlayerProgressManager(TutorialNPCsPlugin plugin) {
         this.plugin = plugin;
@@ -34,12 +33,18 @@ public class PlayerProgressManager {
         }
         dataConfig = YamlConfiguration.loadConfiguration(dataFile);
         nextNpcIndex.clear();
+        completedNpcs.clear();
+
         if (dataConfig.contains("players")) {
             for (String key : dataConfig.getConfigurationSection("players").getKeys(false)) {
                 try {
                     UUID uuid = UUID.fromString(key);
                     int idx = dataConfig.getInt("players." + key + ".nextNpcIndex", 0);
                     nextNpcIndex.put(uuid, idx);
+                    List<?> raw = dataConfig.getList("players." + key + ".completedNpcs", new ArrayList<>());
+                    Set<Integer> set = new HashSet<>();
+                    for (Object o : raw) { try { set.add(Integer.parseInt(o.toString())); } catch (Exception ignored) {} }
+                    completedNpcs.put(uuid, set);
                 } catch (IllegalArgumentException ignored) {}
             }
         }
@@ -47,19 +52,33 @@ public class PlayerProgressManager {
     }
 
     public void saveAll() {
-        for (Map.Entry<UUID, Integer> e : nextNpcIndex.entrySet())
-            dataConfig.set("players." + e.getKey() + ".nextNpcIndex", e.getValue());
+        for (Map.Entry<UUID, Integer> e : nextNpcIndex.entrySet()) {
+            String path = "players." + e.getKey();
+            dataConfig.set(path + ".nextNpcIndex", e.getValue());
+            dataConfig.set(path + ".completedNpcs", new ArrayList<>(completedNpcs.getOrDefault(e.getKey(), new HashSet<>())));
+        }
         try { dataConfig.save(dataFile); }
         catch (IOException e) { plugin.getLogger().log(Level.SEVERE, "Could not save playerdata.yml", e); }
     }
 
     private void savePlayer(UUID uuid) {
         dataConfig.set("players." + uuid + ".nextNpcIndex", nextNpcIndex.getOrDefault(uuid, 0));
+        dataConfig.set("players." + uuid + ".completedNpcs", new ArrayList<>(completedNpcs.getOrDefault(uuid, new HashSet<>())));
         try { dataConfig.save(dataFile); }
         catch (IOException e) { plugin.getLogger().log(Level.SEVERE, "Could not save playerdata.yml", e); }
     }
 
-    public int getNextNpcIndex(Player player) { return nextNpcIndex.getOrDefault(player.getUniqueId(), 0); }
+    public boolean isCompleted(Player player, int npcId) {
+        return completedNpcs.getOrDefault(player.getUniqueId(), new HashSet<>()).contains(npcId);
+    }
+
+    public void markCompleted(Player player, int npcId) {
+        completedNpcs.computeIfAbsent(player.getUniqueId(), k -> new HashSet<>()).add(npcId);
+    }
+
+    public int getNextNpcIndex(Player player) {
+        return nextNpcIndex.getOrDefault(player.getUniqueId(), 0);
+    }
 
     public boolean hasCompletedAll(Player player) {
         return getNextNpcIndex(player) >= plugin.getNpcDataManager().getNPCs().size();
@@ -75,6 +94,7 @@ public class PlayerProgressManager {
     public void resetProgress(Player player) {
         UUID uuid = player.getUniqueId();
         nextNpcIndex.put(uuid, 0);
+        completedNpcs.remove(uuid);
         dialogueLine.remove(uuid);
         activeTutorialNpcId.remove(uuid);
         savePlayer(uuid);
@@ -82,8 +102,9 @@ public class PlayerProgressManager {
     }
 
     public void setProgress(Player player, int index) {
-        nextNpcIndex.put(player.getUniqueId(), Math.max(0, index));
-        savePlayer(player.getUniqueId());
+        UUID uuid = player.getUniqueId();
+        nextNpcIndex.put(uuid, Math.max(0, index));
+        savePlayer(uuid);
         plugin.getHologramManager().updateForPlayer(player);
     }
 
