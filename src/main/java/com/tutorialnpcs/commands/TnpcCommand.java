@@ -133,7 +133,6 @@ public class TnpcCommand implements CommandExecutor, TabCompleter {
             case "reload" -> {
                 plugin.reloadConfig();
                 plugin.getNpcDataManager().loadNPCs();
-                plugin.getPlayerProgressManager().loadAll();
                 sender.sendMessage(prefix() + color("&aReloaded!"));
             }
             default -> sendHelp(sender);
@@ -155,7 +154,7 @@ public class TnpcCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(color("&e/tnpc move <id> &7- Move NPC to your location"));
         sender.sendMessage(color("&e/tnpc resetprogress <player> &7- Reset player progress"));
         sender.sendMessage(color("&e/tnpc setprogress <player> <index> &7- Set player progress"));
-        sender.sendMessage(color("&e/tnpc reload &7- Reload config and data"));
+        sender.sendMessage(color("&e/tnpc reload &7- Reload config and NPC data"));
     }
 
     @Override
