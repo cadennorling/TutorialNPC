@@ -15,9 +15,11 @@ public class PlayerQuitListener implements Listener {
 
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
-        plugin.getPlayerProgressManager().endDialogue(event.getPlayer());
+        // Cancel any running dialogue task
+        plugin.getDialogueManager().cancelDialogue(event.getPlayer());
+        // Remove their hologram
         plugin.getHologramManager().removeForPlayer(event.getPlayer());
-        // Only save THIS player, not everyone
-        plugin.getPlayerProgressManager().saveOne(event.getPlayer());
+        // Unload from memory (data is already saved async on each change)
+        plugin.getPlayerProgressManager().unloadPlayer(event.getPlayer());
     }
 }
