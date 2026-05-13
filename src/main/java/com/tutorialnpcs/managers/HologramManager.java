@@ -20,6 +20,8 @@ import static com.tutorialnpcs.TutorialNPCsPlugin.color;
 public class HologramManager {
 
     private final TutorialNPCsPlugin plugin;
+
+    // One TextDisplay per player — invisible to everyone except that player
     private final Map<UUID, TextDisplay> playerHolograms = new ConcurrentHashMap<>();
     private BukkitTask refreshTask;
 
@@ -29,27 +31,41 @@ public class HologramManager {
 
     public void startRefreshTask() {
         int interval = plugin.getConfig().getInt("waypoint.refresh-interval", 10);
-        refreshTask = Bukkit.getScheduler().runTaskTimer(plugin, this::refreshAll, 20L, interval);
+        refreshTask = Bukkit.getScheduler().runTaskTimer(plugin, this::refreshAll, 40L, interval);
     }
 
     private void refreshAll() {
-        for (Player player : Bukkit.getOnlinePlayers()) updateForPlayer(player);
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            updateForPlayer(player);
+        }
     }
 
     public void updateForPlayer(Player player) {
-        if (!plugin.getConfig().getBoolean("waypoint.enabled", true)) { removeForPlayer(player); return; }
+        if (!plugin.getConfig().getBoolean("waypoint.enabled", true)) {
+            removeForPlayer(player);
+            return;
+        }
 
         PlayerProgressManager ppm = plugin.getPlayerProgressManager();
         List<TutorialNPC> npcs = plugin.getNpcDataManager().getNPCs();
 
-        if (ppm.hasCompletedAll(player) || npcs.isEmpty()) { removeForPlayer(player); return; }
+        if (ppm.hasCompletedAll(player) || npcs.isEmpty()) {
+            removeForPlayer(player);
+            return;
+        }
 
         int nextIdx = ppm.getNextNpcIndex(player);
-        if (nextIdx >= npcs.size()) { removeForPlayer(player); return; }
+        if (nextIdx >= npcs.size()) {
+            removeForPlayer(player);
+            return;
+        }
 
         TutorialNPC nextNpc = npcs.get(nextIdx);
         Location npcLoc = nextNpc.getLocation();
-        if (npcLoc == null || !npcLoc.getWorld().equals(player.getWorld())) { removeForPlayer(player); return; }
+        if (npcLoc == null || !npcLoc.getWorld().equals(player.getWorld())) {
+            removeForPlayer(player);
+            return;
+        }
 
         double height = plugin.getConfig().getDouble("waypoint.hologram-height", 2.5);
         Location holoLoc = npcLoc.clone().add(0, height, 0);
@@ -67,7 +83,7 @@ public class HologramManager {
             existing.setText(text);
             existing.teleport(holoLoc);
         } else {
-            // Remove stale entry if dead
+            // Remove dead entry first
             if (existing != null) existing.remove();
 
             TextDisplay td = holoLoc.getWorld().spawn(holoLoc, TextDisplay.class, display -> {
@@ -83,18 +99,19 @@ public class HologramManager {
                         new Vector3f(1.4f, 1.4f, 1.4f),
                         new AxisAngle4f(0, 0, 0, 1)
                 ));
-                // Hide from everyone initially
+                // Hidden from ALL players by default
                 display.setVisibleByDefault(false);
             });
 
-            // Show only to this specific player
+            // Show ONLY to the owning player
             player.showEntity(plugin, td);
             playerHolograms.put(uuid, td);
         }
     }
 
     public void removeForPlayer(Player player) {
-        TextDisplay td = playerHolograms.remove(player.getUniqueId());
+        UUID uuid = player.getUniqueId();
+        TextDisplay td = playerHolograms.remove(uuid);
         if (td != null && !td.isDead()) {
             player.hideEntity(plugin, td);
             td.remove();
