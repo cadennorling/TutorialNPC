@@ -1,30 +1,44 @@
+# ============================================================
+#  TutorialNPCs - config.yml
+# ============================================================
+
 prefix: "&8[&bTutorial&8] &r"
+
+# MySQL Database connection
+database:
+  host: "localhost"
+  port: 3306
+  name: "tutorialnpcs"
+  username: "root"
+  password: "password"
+  # Connection pool size
+  pool-size: 5
 
 dialogue:
   name-color: "&b"
   text-color: "&f"
   separator: "&8&m------------------------------"
   finished-message: "&aConversation complete! Head to the next NPC."
-  click-to-continue: "&7&o(Click to continue)"
-  click-to-finish: "&7&o(Click to finish)"
+  # Seconds between each auto-advancing dialogue line (supports decimals e.g. 2.5)
+  line-delay-seconds: 3.0
 
 waypoint:
   enabled: true
+  # How often (ticks) to refresh the distance. 20 = 1 second
   refresh-interval: 10
   name-color: "&e&l"
   distance-color: "&f"
   distance-label: " blocks away"
   hologram-height: 2.5
-  visible-through-walls: true
 
 progression:
   enforce-order: true
   wrong-order-message: "&cYou need to speak with &e{npc_name} &cfirst!"
-  allow-revisit: true
+  # Allow players to re-read completed NPCs (they won't re-advance progress)
+  allow-revisit: false
   revisit-message: "&7You have already spoken with this NPC."
   broadcast-completion: false
   completion-broadcast: "&6&l{player} &ehas completed the tutorial!"
 
 storage:
   npc-data-file: "npcs.yml"
-  player-data-file: "playerdata.yml"
