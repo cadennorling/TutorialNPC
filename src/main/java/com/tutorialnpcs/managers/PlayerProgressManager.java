@@ -1,84 +1,60 @@
 package com.tutorialnpcs.managers;
 
 import com.tutorialnpcs.TutorialNPCsPlugin;
-import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 
-import java.io.File;
-import java.io.IOException;
 import java.util.*;
-import java.util.logging.Level;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class PlayerProgressManager {
 
     private final TutorialNPCsPlugin plugin;
-    private File dataFile;
-    private YamlConfiguration dataConfig;
 
-    private final Map<UUID, Integer> nextNpcIndex = new HashMap<>();
-    private final Map<UUID, Integer> dialogueLine = new HashMap<>();
-    private final Map<UUID, Integer> activeTutorialNpcId = new HashMap<>();
-    private final Map<UUID, Set<Integer>> completedNpcs = new HashMap<>();
+    // In-memory cache — backed by MySQL
+    private final Map<UUID, Integer> nextNpcIndex = new ConcurrentHashMap<>();
+    private final Map<UUID, Set<Integer>> completedNpcs = new ConcurrentHashMap<>();
+
+    // Active dialogue state (never persisted, only in-memory)
+    private final Map<UUID, Integer> activeTutorialNpcId = new ConcurrentHashMap<>();
+    private final Map<UUID, Integer> dialogueLine = new ConcurrentHashMap<>();
 
     public PlayerProgressManager(TutorialNPCsPlugin plugin) {
         this.plugin = plugin;
     }
 
-    public void loadAll() {
-        String fileName = plugin.getConfig().getString("storage.player-data-file", "playerdata.yml");
-        dataFile = new File(plugin.getDataFolder(), fileName);
-        if (!dataFile.exists()) {
-            try { dataFile.createNewFile(); }
-            catch (IOException e) { plugin.getLogger().log(Level.SEVERE, "Could not create playerdata.yml", e); }
-        }
-        dataConfig = YamlConfiguration.loadConfiguration(dataFile);
-        nextNpcIndex.clear();
-        completedNpcs.clear();
+    // ── Load / save via DB ────────────────────────────────────────────────────
 
-        if (dataConfig.contains("players")) {
-            for (String key : dataConfig.getConfigurationSection("players").getKeys(false)) {
-                try {
-                    UUID uuid = UUID.fromString(key);
-                    int idx = dataConfig.getInt("players." + key + ".nextNpcIndex", 0);
-                    nextNpcIndex.put(uuid, idx);
-                    List<?> raw = dataConfig.getList("players." + key + ".completedNpcs", new ArrayList<>());
-                    Set<Integer> set = new HashSet<>();
-                    for (Object o : raw) { try { set.add(Integer.parseInt(o.toString())); } catch (Exception ignored) {} }
-                    completedNpcs.put(uuid, set);
-                } catch (IllegalArgumentException ignored) {}
-            }
-        }
-        plugin.getLogger().info("Loaded progress for " + nextNpcIndex.size() + " player(s).");
+    public void loadPlayer(Player player) {
+        UUID uuid = player.getUniqueId();
+        int idx = plugin.getDatabaseManager().loadNextNpcIndex(uuid);
+        Set<Integer> completed = plugin.getDatabaseManager().loadCompletedNpcs(uuid);
+        nextNpcIndex.put(uuid, idx);
+        completedNpcs.put(uuid, completed);
     }
 
-    public void saveAll() {
-        for (Map.Entry<UUID, Integer> e : nextNpcIndex.entrySet()) {
-            String path = "players." + e.getKey();
-            dataConfig.set(path + ".nextNpcIndex", e.getValue());
-            dataConfig.set(path + ".completedNpcs", new ArrayList<>(completedNpcs.getOrDefault(e.getKey(), new HashSet<>())));
-        }
-        try { dataConfig.save(dataFile); }
-        catch (IOException e) { plugin.getLogger().log(Level.SEVERE, "Could not save playerdata.yml", e); }
+    public void unloadPlayer(Player player) {
+        UUID uuid = player.getUniqueId();
+        nextNpcIndex.remove(uuid);
+        completedNpcs.remove(uuid);
+        activeTutorialNpcId.remove(uuid);
+        dialogueLine.remove(uuid);
     }
 
-    public void saveOne(org.bukkit.entity.Player player) {
-        savePlayer(player.getUniqueId());
-    }
-
-    private void savePlayer(UUID uuid) {
-        dataConfig.set("players." + uuid + ".nextNpcIndex", nextNpcIndex.getOrDefault(uuid, 0));
-        dataConfig.set("players." + uuid + ".completedNpcs", new ArrayList<>(completedNpcs.getOrDefault(uuid, new HashSet<>())));
-        try { dataConfig.save(dataFile); }
-        catch (IOException e) { plugin.getLogger().log(Level.SEVERE, "Could not save playerdata.yml", e); }
-    }
+    // ── Completion tracking ───────────────────────────────────────────────────
 
     public boolean isCompleted(Player player, int npcId) {
         return completedNpcs.getOrDefault(player.getUniqueId(), new HashSet<>()).contains(npcId);
     }
 
     public void markCompleted(Player player, int npcId) {
-        completedNpcs.computeIfAbsent(player.getUniqueId(), k -> new HashSet<>()).add(npcId);
+        UUID uuid = player.getUniqueId();
+        completedNpcs.computeIfAbsent(uuid, k -> new HashSet<>()).add(npcId);
+        // Async DB write
+        plugin.getServer().getScheduler().runTaskAsynchronously(plugin,
+                () -> plugin.getDatabaseManager().markNpcCompleted(uuid, npcId));
     }
+
+    // ── Progress ──────────────────────────────────────────────────────────────
 
     public int getNextNpcIndex(Player player) {
         return nextNpcIndex.getOrDefault(player.getUniqueId(), 0);
@@ -90,30 +66,44 @@ public class PlayerProgressManager {
 
     public void advance(Player player) {
         UUID uuid = player.getUniqueId();
-        nextNpcIndex.put(uuid, nextNpcIndex.getOrDefault(uuid, 0) + 1);
-        savePlayer(uuid);
+        int newIdx = nextNpcIndex.getOrDefault(uuid, 0) + 1;
+        nextNpcIndex.put(uuid, newIdx);
         plugin.getHologramManager().updateForPlayer(player);
+        // Async DB write
+        final int save = newIdx;
+        plugin.getServer().getScheduler().runTaskAsynchronously(plugin,
+                () -> plugin.getDatabaseManager().saveNextNpcIndex(uuid, save));
     }
 
     public void resetProgress(Player player) {
         UUID uuid = player.getUniqueId();
         nextNpcIndex.put(uuid, 0);
-        completedNpcs.remove(uuid);
-        dialogueLine.remove(uuid);
+        completedNpcs.put(uuid, new HashSet<>());
         activeTutorialNpcId.remove(uuid);
-        savePlayer(uuid);
+        dialogueLine.remove(uuid);
         plugin.getHologramManager().updateForPlayer(player);
+        plugin.getServer().getScheduler().runTaskAsynchronously(plugin,
+                () -> plugin.getDatabaseManager().resetPlayer(uuid));
     }
 
     public void setProgress(Player player, int index) {
         UUID uuid = player.getUniqueId();
         nextNpcIndex.put(uuid, Math.max(0, index));
-        savePlayer(uuid);
         plugin.getHologramManager().updateForPlayer(player);
+        final int save = Math.max(0, index);
+        plugin.getServer().getScheduler().runTaskAsynchronously(plugin,
+                () -> plugin.getDatabaseManager().setProgress(uuid, save));
     }
 
-    public boolean isInDialogue(Player player) { return activeTutorialNpcId.containsKey(player.getUniqueId()); }
-    public int getActiveTutorialNpcId(Player player) { return activeTutorialNpcId.getOrDefault(player.getUniqueId(), -1); }
+    // ── Active dialogue state ─────────────────────────────────────────────────
+
+    public boolean isInDialogue(Player player) {
+        return activeTutorialNpcId.containsKey(player.getUniqueId());
+    }
+
+    public int getActiveTutorialNpcId(Player player) {
+        return activeTutorialNpcId.getOrDefault(player.getUniqueId(), -1);
+    }
 
     public void startDialogue(Player player, int tutorialNpcId) {
         activeTutorialNpcId.put(player.getUniqueId(), tutorialNpcId);
@@ -125,10 +115,11 @@ public class PlayerProgressManager {
         dialogueLine.remove(player.getUniqueId());
     }
 
-    public int getDialogueLine(Player player) { return dialogueLine.getOrDefault(player.getUniqueId(), 0); }
+    public int getDialogueLine(Player player) {
+        return dialogueLine.getOrDefault(player.getUniqueId(), 0);
+    }
 
-    public void advanceDialogueLine(Player player) {
-        UUID uuid = player.getUniqueId();
-        dialogueLine.put(uuid, dialogueLine.getOrDefault(uuid, 0) + 1);
+    public void setDialogueLine(Player player, int line) {
+        dialogueLine.put(player.getUniqueId(), line);
     }
 }
