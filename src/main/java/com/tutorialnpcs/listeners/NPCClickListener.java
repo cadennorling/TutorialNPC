@@ -23,20 +23,29 @@ public class NPCClickListener implements Listener {
         Player player = event.getClicker();
         int citizensId = event.getNPC().getId();
 
+        // Debug log so we can see what Citizens ID is being clicked
+        plugin.getLogger().info("[DEBUG] Player " + player.getName() + " clicked Citizens NPC ID: " + citizensId);
+
         TutorialNPC tnpc = plugin.getNpcDataManager().getByEntityId(citizensId);
-        if (tnpc == null) return; // Not one of our tutorial NPCs
+
+        if (tnpc == null) {
+            plugin.getLogger().info("[DEBUG] No TutorialNPC mapped to Citizens ID " + citizensId + " - known mappings: " + plugin.getNpcDataManager().debugMappings());
+            return;
+        }
+
+        plugin.getLogger().info("[DEBUG] Mapped to TutorialNPC ID: " + tnpc.getId() + " name: " + tnpc.getName());
 
         String prefix = TutorialNPCsPlugin.color(
                 plugin.getConfig().getString("prefix", "&8[&bTutorial&8] &r"));
 
-        // ── Block if already in dialogue ─────────────────────────────────────
+        // Block if already in dialogue
         if (plugin.getDialogueManager().isInAutoDialogue(player)) {
             player.sendMessage(prefix + TutorialNPCsPlugin.color(
                     "&7Please wait until the current conversation finishes."));
             return;
         }
 
-        // ── Block if already completed this NPC and revisit is off ───────────
+        // Block if already completed and revisit off
         boolean allowRevisit = plugin.getConfig().getBoolean("progression.allow-revisit", false);
         if (plugin.getPlayerProgressManager().isCompleted(player, tnpc.getId())) {
             if (!allowRevisit) {
@@ -49,11 +58,12 @@ public class NPCClickListener implements Listener {
             return;
         }
 
-        // ── Block if this is not the next NPC in order ───────────────────────
+        // Block if not the next NPC in order
         List<TutorialNPC> allNpcs = plugin.getNpcDataManager().getNPCs();
         int nextIdx = plugin.getPlayerProgressManager().getNextNpcIndex(player);
 
-        // Find which index this NPC is
+        plugin.getLogger().info("[DEBUG] Player nextIdx=" + nextIdx + " total NPCs=" + allNpcs.size());
+
         int thisIdx = -1;
         for (int i = 0; i < allNpcs.size(); i++) {
             if (allNpcs.get(i).getId() == tnpc.getId()) {
@@ -61,10 +71,12 @@ public class NPCClickListener implements Listener {
                 break;
             }
         }
+
+        plugin.getLogger().info("[DEBUG] thisIdx=" + thisIdx + " nextIdx=" + nextIdx);
+
         if (thisIdx < 0) return;
 
         if (thisIdx != nextIdx && !player.hasPermission("tutorialnpcs.bypass")) {
-            // Wrong NPC — tell them who they should be talking to
             if (nextIdx < allNpcs.size()) {
                 TutorialNPC required = allNpcs.get(nextIdx);
                 String msg = plugin.getConfig().getString("progression.wrong-order-message",
@@ -75,7 +87,6 @@ public class NPCClickListener implements Listener {
             return;
         }
 
-        // ── All checks passed — start dialogue ───────────────────────────────
         plugin.getDialogueManager().handleClick(player, tnpc);
     }
 }
