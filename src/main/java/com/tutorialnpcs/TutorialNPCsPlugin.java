@@ -16,20 +16,20 @@ public class TutorialNPCsPlugin extends JavaPlugin {
     private PlayerProgressManager playerProgressManager;
     private DialogueManager dialogueManager;
     private HologramManager hologramManager;
+    private NPCClickListener npcClickListener;
 
     @Override
     public void onEnable() {
         instance = this;
         saveDefaultConfig();
 
-        // Init managers
         databaseManager = new DatabaseManager(this);
         npcDataManager = new NPCDataManager(this);
         playerProgressManager = new PlayerProgressManager(this);
         dialogueManager = new DialogueManager(this);
         hologramManager = new HologramManager(this);
+        npcClickListener = new NPCClickListener(this);
 
-        // Connect to MySQL — disable plugin if connection fails
         if (!databaseManager.connect()) {
             getLogger().severe("Could not connect to MySQL! Disabling TutorialNPCs.");
             getServer().getPluginManager().disablePlugin(this);
@@ -38,20 +38,16 @@ public class TutorialNPCsPlugin extends JavaPlugin {
 
         npcDataManager.loadNPCs();
 
-        // Register listeners
-        getServer().getPluginManager().registerEvents(new NPCClickListener(this), this);
+        getServer().getPluginManager().registerEvents(npcClickListener, this);
         getServer().getPluginManager().registerEvents(new PlayerJoinListener(this), this);
         getServer().getPluginManager().registerEvents(new PlayerQuitListener(this), this);
 
-        // Register commands
         TnpcCommand cmd = new TnpcCommand(this);
         getCommand("tnpc").setExecutor(cmd);
         getCommand("tnpc").setTabCompleter(cmd);
 
-        // Start hologram refresh task
         hologramManager.startRefreshTask();
 
-        // Load progress for any players already online (e.g. after /reload)
         for (org.bukkit.entity.Player p : getServer().getOnlinePlayers()) {
             playerProgressManager.loadPlayer(p);
             hologramManager.updateForPlayer(p);
@@ -78,6 +74,7 @@ public class TutorialNPCsPlugin extends JavaPlugin {
     public PlayerProgressManager getPlayerProgressManager() { return playerProgressManager; }
     public DialogueManager getDialogueManager() { return dialogueManager; }
     public HologramManager getHologramManager() { return hologramManager; }
+    public NPCClickListener getNPCClickListener() { return npcClickListener; }
 
     public static String color(String s) {
         return s == null ? "" : org.bukkit.ChatColor.translateAlternateColorCodes('&', s);
