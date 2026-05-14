@@ -9,10 +9,17 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class NPCClickListener implements Listener {
 
     private final TutorialNPCsPlugin plugin;
+
+    // UUID -> last click timestamp in ms, to prevent double-fire
+    private final Map<UUID, Long> lastClick = new ConcurrentHashMap<>();
+    private static final long CLICK_COOLDOWN_MS = 500;
 
     public NPCClickListener(TutorialNPCsPlugin plugin) {
         this.plugin = plugin;
@@ -21,19 +28,17 @@ public class NPCClickListener implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onNPCRightClick(NPCRightClickEvent event) {
         Player player = event.getClicker();
+        UUID uuid = player.getUniqueId();
+
+        // Debounce — ignore clicks within 500ms of the last one
+        long now = System.currentTimeMillis();
+        Long last = lastClick.get(uuid);
+        if (last != null && now - last < CLICK_COOLDOWN_MS) return;
+        lastClick.put(uuid, now);
+
         int citizensId = event.getNPC().getId();
-
-        // Debug log so we can see what Citizens ID is being clicked
-        plugin.getLogger().info("[DEBUG] Player " + player.getName() + " clicked Citizens NPC ID: " + citizensId);
-
         TutorialNPC tnpc = plugin.getNpcDataManager().getByEntityId(citizensId);
-
-        if (tnpc == null) {
-            plugin.getLogger().info("[DEBUG] No TutorialNPC mapped to Citizens ID " + citizensId + " - known mappings: " + plugin.getNpcDataManager().debugMappings());
-            return;
-        }
-
-        plugin.getLogger().info("[DEBUG] Mapped to TutorialNPC ID: " + tnpc.getId() + " name: " + tnpc.getName());
+        if (tnpc == null) return;
 
         String prefix = TutorialNPCsPlugin.color(
                 plugin.getConfig().getString("prefix", "&8[&bTutorial&8] &r"));
@@ -62,8 +67,6 @@ public class NPCClickListener implements Listener {
         List<TutorialNPC> allNpcs = plugin.getNpcDataManager().getNPCs();
         int nextIdx = plugin.getPlayerProgressManager().getNextNpcIndex(player);
 
-        plugin.getLogger().info("[DEBUG] Player nextIdx=" + nextIdx + " total NPCs=" + allNpcs.size());
-
         int thisIdx = -1;
         for (int i = 0; i < allNpcs.size(); i++) {
             if (allNpcs.get(i).getId() == tnpc.getId()) {
@@ -71,9 +74,6 @@ public class NPCClickListener implements Listener {
                 break;
             }
         }
-
-        plugin.getLogger().info("[DEBUG] thisIdx=" + thisIdx + " nextIdx=" + nextIdx);
-
         if (thisIdx < 0) return;
 
         if (thisIdx != nextIdx && !player.hasPermission("tutorialnpcs.bypass")) {
