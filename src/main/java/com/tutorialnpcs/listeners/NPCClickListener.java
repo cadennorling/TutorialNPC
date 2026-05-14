@@ -3,6 +3,7 @@ package com.tutorialnpcs.listeners;
 import com.tutorialnpcs.TutorialNPCsPlugin;
 import com.tutorialnpcs.model.TutorialNPC;
 import net.citizensnpcs.api.event.NPCRightClickEvent;
+import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -16,8 +17,6 @@ import java.util.concurrent.ConcurrentHashMap;
 public class NPCClickListener implements Listener {
 
     private final TutorialNPCsPlugin plugin;
-
-    // Debounce to prevent Citizens double-firing
     private final Map<UUID, Long> lastClick = new ConcurrentHashMap<>();
     private static final long CLICK_COOLDOWN_MS = 500;
 
@@ -36,14 +35,30 @@ public class NPCClickListener implements Listener {
         if (last != null && now - last < CLICK_COOLDOWN_MS) return;
         lastClick.put(uuid, now);
 
+        // Try lookup by Citizens ID first, then fall back to location
         int citizensId = event.getNPC().getId();
         TutorialNPC tnpc = plugin.getNpcDataManager().getByEntityId(citizensId);
+
+        if (tnpc == null) {
+            // Fall back: find by NPC location within 2 blocks
+            Location npcLoc = event.getNPC().getEntity() != null
+                    ? event.getNPC().getEntity().getLocation() : null;
+            if (npcLoc != null) {
+                tnpc = plugin.getNpcDataManager().getByLocation(npcLoc, 2.0);
+                if (tnpc != null) {
+                    // Fix the stored Citizens ID so future lookups work
+                    plugin.getLogger().info("[TutorialNPCs] Remapped Citizens ID " + citizensId + " to TutorialNPC #" + tnpc.getId());
+                    plugin.getNpcDataManager().remapCitizensId(tnpc, citizensId);
+                }
+            }
+        }
+
         if (tnpc == null) return; // Not one of our tutorial NPCs
 
         String prefix = TutorialNPCsPlugin.color(
                 plugin.getConfig().getString("prefix", "&8[&bTutorial&8] &r"));
 
-        // Block if already in dialogue with any NPC
+        // Block if already in dialogue
         if (plugin.getDialogueManager().isInAutoDialogue(player)) {
             player.sendMessage(prefix + TutorialNPCsPlugin.color(
                     "&7Please wait until the current conversation finishes."));
@@ -63,8 +78,7 @@ public class NPCClickListener implements Listener {
         }
         if (thisIdx < 0) return;
 
-        // ── ORDER CHECK FIRST — always runs before anything else ─────────────
-        // If this NPC is ahead of where the player is, block it
+        // Order check — runs before everything else
         if (thisIdx > nextIdx && !player.hasPermission("tutorialnpcs.bypass")) {
             TutorialNPC required = allNpcs.get(nextIdx);
             String msg = plugin.getConfig().getString("progression.wrong-order-message",
@@ -74,9 +88,8 @@ public class NPCClickListener implements Listener {
             return;
         }
 
-        // ── REVISIT CHECK — only for NPCs the player has already completed ───
+        // Revisit check — previously completed NPC
         if (thisIdx < nextIdx) {
-            // This is a previously completed NPC
             boolean allowRevisit = plugin.getConfig().getBoolean("progression.allow-revisit", false);
             if (!allowRevisit) {
                 player.sendMessage(prefix + TutorialNPCsPlugin.color(
@@ -88,7 +101,7 @@ public class NPCClickListener implements Listener {
             return;
         }
 
-        // ── thisIdx == nextIdx — this is the correct next NPC ────────────────
+        // Correct NPC — start dialogue
         plugin.getDialogueManager().handleClick(player, tnpc);
     }
 }
