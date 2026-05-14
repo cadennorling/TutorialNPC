@@ -15,8 +15,7 @@ import static com.tutorialnpcs.TutorialNPCsPlugin.color;
 public class DialogueManager {
 
     private final TutorialNPCsPlugin plugin;
-
-    // UUID → running auto-advance task
+    private static final int MAX_DIALOGUE_LINES = 100;
     private final Map<UUID, BukkitTask> autoAdvanceTasks = new ConcurrentHashMap<>();
 
     public DialogueManager(TutorialNPCsPlugin plugin) {
@@ -24,7 +23,7 @@ public class DialogueManager {
     }
 
     public void handleClick(Player player, TutorialNPC tnpc) {
-        // Don't start if already in dialogue (safety check)
+        if (player == null || tnpc == null) return;
         if (autoAdvanceTasks.containsKey(player.getUniqueId())) return;
         startAutoDialogue(player, tnpc);
     }
@@ -34,16 +33,21 @@ public class DialogueManager {
         List<String> lines = tnpc.getDialogue();
         String prefix = color(plugin.getConfig().getString("prefix", "&8[&bTutorial&8] &r"));
 
-        if (lines.isEmpty()) {
+        if (lines == null || lines.isEmpty()) {
             player.sendMessage(prefix + color("&7This NPC has nothing to say yet."));
             return;
         }
 
+        // Safety cap — never run more than MAX lines
+        int totalLines = Math.min(lines.size(), MAX_DIALOGUE_LINES);
+
         ppm.startDialogue(player, tnpc.getId());
         ppm.setDialogueLine(player, 0);
 
-        double delaySeconds = plugin.getConfig().getDouble("dialogue.line-delay-seconds", 3.0);
-        long delayTicks = Math.max(1L, (long) (delaySeconds * 20));
+        // Clamp delay to sane range: 0.5s minimum, 60s maximum
+        double rawDelay = plugin.getConfig().getDouble("dialogue.line-delay-seconds", 3.0);
+        double clampedDelay = Math.max(0.5, Math.min(60.0, rawDelay));
+        long delayTicks = (long) (clampedDelay * 20);
 
         String separator = color(plugin.getConfig().getString("dialogue.separator",
                 "&8&m------------------------------"));
@@ -52,21 +56,22 @@ public class DialogueManager {
         player.sendMessage(separator);
         player.sendMessage(color(lines.get(0)));
 
-        // If only one line, finish immediately after delay
         UUID uuid = player.getUniqueId();
+        final int lineCap = totalLines;
 
         BukkitTask task = plugin.getServer().getScheduler().runTaskTimer(plugin, new Runnable() {
             int lineIndex = 1;
 
             @Override
             public void run() {
+                // Safety: player offline
                 if (!player.isOnline()) {
                     cancelTask(uuid);
                     ppm.endDialogue(player);
                     return;
                 }
 
-                if (lineIndex >= lines.size()) {
+                if (lineIndex >= lineCap) {
                     // All lines done
                     player.sendMessage(color(plugin.getConfig().getString("dialogue.finished-message",
                             "&aConversation complete! Head to the next NPC.")));
@@ -74,7 +79,6 @@ public class DialogueManager {
                     ppm.endDialogue(player);
                     cancelTask(uuid);
 
-                    // Mark completed and advance
                     ppm.markCompleted(player, tnpc.getId());
                     ppm.advance(player);
 
@@ -91,9 +95,11 @@ public class DialogueManager {
                     return;
                 }
 
-                // Send next line
-                player.sendMessage(color(lines.get(lineIndex)));
-                ppm.setDialogueLine(player, lineIndex);
+                // Send next line safely
+                if (lineIndex < lines.size()) {
+                    player.sendMessage(color(lines.get(lineIndex)));
+                    ppm.setDialogueLine(player, lineIndex);
+                }
                 lineIndex++;
             }
         }, delayTicks, delayTicks);
@@ -103,15 +109,19 @@ public class DialogueManager {
 
     private void cancelTask(UUID uuid) {
         BukkitTask task = autoAdvanceTasks.remove(uuid);
-        if (task != null) task.cancel();
+        if (task != null) {
+            try { task.cancel(); } catch (Exception ignored) {}
+        }
     }
 
     public void cancelDialogue(Player player) {
+        if (player == null) return;
         cancelTask(player.getUniqueId());
         plugin.getPlayerProgressManager().endDialogue(player);
     }
 
     public boolean isInAutoDialogue(Player player) {
+        if (player == null) return false;
         return autoAdvanceTasks.containsKey(player.getUniqueId());
     }
 }
