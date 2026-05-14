@@ -15,11 +15,11 @@ public class PlayerQuitListener implements Listener {
 
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
-        // Cancel any running dialogue task
+        if (event.getPlayer() == null) return;
         plugin.getDialogueManager().cancelDialogue(event.getPlayer());
-        // Remove their hologram
         plugin.getHologramManager().removeForPlayer(event.getPlayer());
-        // Unload from memory (data is already saved async on each change)
         plugin.getPlayerProgressManager().unloadPlayer(event.getPlayer());
+        // Clean up rate limit data
+        plugin.getNPCClickListener().cleanup(event.getPlayer().getUniqueId());
     }
 }
